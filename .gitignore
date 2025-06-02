@@ -1,0 +1,48 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# Node.js
+node_modules/
+.env
+.env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build
+build/
+dist/
+.next/
+.vite/
+.cache/
+.turbo/
+.parcel-cache/
+.eslintcache/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Testes temporários
+*.log
+*.tmp
+
+# React
+*.env
+
+# VSCode
+.vscode/
+
+# Outros
+*.swp
+*.swo
+.idea/
+
+# Arquivos de configuração locais
+*.local.js
+*.local.json

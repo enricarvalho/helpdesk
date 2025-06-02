@@ -1,0 +1,422 @@
+const Chamado = require('../models/Chamado');
+const fetch = require('node-fetch');
+
+class AIService {
+  constructor() {
+    // Base de conhecimento para análise de padrões
+    this.knowledgeBase = {
+      // Padrões de problemas comuns e suas soluções
+      patterns: [
+        {
+          keywords: ['senha', 'login', 'acesso', 'entrar', 'bloqueado'],
+          category: 'Autenticação',
+          solutions: [
+            'Redefinir senha através do sistema',
+            'Verificar se o usuário está ativo no sistema',
+            'Limpar cache do navegador',
+            'Verificar se caps lock está ativado',
+            'Contatar administrador para desbloqueio'
+          ],
+          priority: 'Alta',
+          estimatedTime: '15-30 minutos'
+        },
+        {
+          keywords: ['internet', 'rede', 'wifi', 'conexão', 'lento'],
+          category: 'Conectividade',
+          solutions: [
+            'Verificar cabo de rede',
+            'Reiniciar roteador/modem',
+            'Verificar configurações de DNS',
+            'Executar diagnóstico de rede',
+            'Contatar provedor de internet'
+          ],
+          priority: 'Média',
+          estimatedTime: '30-60 minutos'
+        },
+        {
+          keywords: ['impressora', 'imprimir', 'papel', 'toner', 'scanner'],
+          category: 'Impressão',
+          solutions: [
+            'Verificar se há papel na impressora',
+            'Verificar nível de toner/tinta',
+            'Reinstalar driver da impressora',
+            'Limpar fila de impressão',
+            'Verificar conexão USB/rede da impressora'
+          ],
+          priority: 'Baixa',
+          estimatedTime: '20-45 minutos'
+        },
+        {
+          keywords: ['email', 'outlook', 'envio', 'recebimento', 'anexo'],
+          category: 'Email',
+          solutions: [
+            'Verificar configurações de servidor',
+            'Verificar caixa de spam',
+            'Reconfigurar conta de email',
+            'Verificar cota de armazenamento',
+            'Verificar tamanho dos anexos'
+          ],
+          priority: 'Média',
+          estimatedTime: '25-40 minutos'
+        },
+        {
+          keywords: ['sistema', 'erro', 'travando', 'lento', 'aplicativo'],
+          category: 'Software',
+          solutions: [
+            'Reiniciar o aplicativo',
+            'Verificar atualizações disponíveis',
+            'Limpar arquivos temporários',
+            'Verificar espaço em disco',
+            'Executar antivírus'
+          ],
+          priority: 'Média',
+          estimatedTime: '30-90 minutos'
+        },
+        {
+          keywords: ['hardware', 'monitor', 'teclado', 'mouse', 'cabo'],
+          category: 'Hardware',
+          solutions: [
+            'Verificar todas as conexões',
+            'Testar em outro computador',
+            'Verificar drivers do dispositivo',
+            'Limpar contatos/conectores',
+            'Substituir cabo se necessário'
+          ],
+          priority: 'Alta',
+          estimatedTime: '45-120 minutos'
+        }
+      ]
+    };
+  }
+
+  // Analisa um chamado e retorna sugestões de IA
+  async analyzeChamado(chamado) {
+    try {
+      console.log('🤖 AI: Analisando chamado:', chamado.titulo);
+
+      // Combinar título e descrição para análise
+      const text = `${chamado.titulo} ${chamado.descricao}`.toLowerCase();
+
+      // Encontrar padrões correspondentes
+      const matchedPatterns = this.findMatchingPatterns(text);
+
+      // Buscar chamados similares resolvidos
+      const similarChamados = await this.findSimilarResolvedChamados(text, chamado._id);
+
+      // Analisar histórico do usuário
+      const userHistory = await this.analyzeUserHistory(chamado.usuario);
+
+      // Gerar sugestões baseadas nos padrões encontrados
+      const suggestions = this.generateSuggestions(matchedPatterns, similarChamados, userHistory);
+
+      // Calcular confiança da análise
+      const confidence = this.calculateConfidence(matchedPatterns, similarChamados);
+
+      return {
+        analysis: {
+          detectedCategory: matchedPatterns.length > 0 ? matchedPatterns[0].category : 'Geral',
+          confidence: confidence,
+          suggestedPriority: this.suggestPriority(matchedPatterns, chamado.prioridade),
+          estimatedResolutionTime: this.estimateResolutionTime(matchedPatterns)
+        },
+        suggestions: suggestions,
+        similarCases: similarChamados.slice(0, 3), // Top 3 casos similares
+        userInsights: userHistory,
+        createdAt: new Date().toISOString()
+      };
+
+    } catch (error) {
+      console.error('❌ Erro na análise de IA:', error);
+      return {
+        analysis: {
+          detectedCategory: 'Geral',
+          confidence: 0,
+          suggestedPriority: chamado.prioridade,
+          estimatedResolutionTime: 'Não estimado'
+        },
+        suggestions: ['Análise manual necessária'],
+        similarCases: [],
+        userInsights: {},
+        error: 'Erro na análise de IA',
+        createdAt: new Date().toISOString()
+      };
+    }
+  }
+
+  // Encontra padrões correspondentes no texto
+  findMatchingPatterns(text) {
+    return this.knowledgeBase.patterns.filter(pattern => {
+      const matchCount = pattern.keywords.filter(keyword => 
+        text.includes(keyword)
+      ).length;
+      return matchCount > 0;
+    }).sort((a, b) => {
+      // Ordenar por número de palavras-chave correspondentes
+      const aMatches = a.keywords.filter(k => text.includes(k)).length;
+      const bMatches = b.keywords.filter(k => text.includes(k)).length;
+      return bMatches - aMatches;
+    });
+  }
+
+  // Busca chamados similares já resolvidos
+  async findSimilarResolvedChamados(text, currentChamadoId) {
+    try {
+      const chamados = await Chamado.find({
+        _id: { $ne: currentChamadoId },
+        status: { $in: ['Resolvido', 'Fechado'] },
+        comentarioResolucao: { $exists: true, $ne: '' }
+      }).limit(10).populate('usuario', 'nome email');
+
+      // Calcular similaridade baseada em palavras-chave
+      const keywords = text.split(' ').filter(word => word.length > 3);
+      
+      return chamados.map(chamado => {
+        const chamadoText = `${chamado.titulo} ${chamado.descricao}`.toLowerCase();
+        const similarity = this.calculateTextSimilarity(text, chamadoText);
+        
+        return {
+          id: chamado._id,
+          titulo: chamado.titulo,
+          categoria: chamado.categoria,
+          resolucao: chamado.comentarioResolucao,
+          tempoResolucao: this.calculateResolutionTime(chamado),
+          similarity: similarity
+        };
+      }).filter(item => item.similarity > 0.1)
+        .sort((a, b) => b.similarity - a.similarity);
+
+    } catch (error) {
+      console.error('Erro ao buscar chamados similares:', error);
+      return [];
+    }
+  }
+
+  // Analisa histórico do usuário
+  async analyzeUserHistory(usuarioId) {
+    try {
+      const chamados = await Chamado.find({
+        usuario: usuarioId
+      }).sort({ criadoEm: -1 }).limit(10);
+
+      const totalChamados = chamados.length;
+      const chamadosResolvidos = chamados.filter(c => c.status === 'Resolvido').length;
+      const categorias = [...new Set(chamados.map(c => c.categoria))];
+      const tempoMedioResolucao = this.calculateAverageResolutionTime(chamados);
+
+      return {
+        totalChamados,
+        chamadosResolvidos,
+        taxaResolucao: totalChamados > 0 ? (chamadosResolvidos / totalChamados * 100).toFixed(1) : 0,
+        categoriasMaisComuns: categorias.slice(0, 3),
+        tempoMedioResolucao,
+        usuarioRecorrente: totalChamados > 5
+      };
+
+    } catch (error) {
+      console.error('Erro ao analisar histórico do usuário:', error);
+      return {};
+    }
+  }
+
+  // Gera sugestões baseadas na análise
+  generateSuggestions(patterns, similarCases, userHistory) {
+    const suggestions = [];
+
+    // Sugestões baseadas em padrões
+    if (patterns.length > 0) {
+      const topPattern = patterns[0];
+      suggestions.push(...topPattern.solutions.slice(0, 3));
+    }
+
+    // Sugestões baseadas em casos similares
+    if (similarCases.length > 0) {
+      const topSimilar = similarCases[0];
+      if (topSimilar.resolucao && topSimilar.similarity > 0.3) {
+        suggestions.push(`Solução similar: ${topSimilar.resolucao}`);
+      }
+    }
+
+    // Sugestões baseadas no histórico do usuário
+    if (userHistory.usuarioRecorrente) {
+      suggestions.push('Usuário recorrente - considerar treinamento específico');
+    }
+
+    // Sugestões gerais se não houver padrões
+    if (suggestions.length === 0) {
+      suggestions.push(
+        'Coletar mais informações sobre o problema',
+        'Verificar se o problema é reproduzível',
+        'Documentar passos para reproduzir o erro'
+      );
+    }
+
+    return [...new Set(suggestions)]; // Remove duplicatas
+  }
+
+  // Calcula confiança da análise
+  calculateConfidence(patterns, similarCases) {
+    let confidence = 0;
+
+    if (patterns.length > 0) {
+      confidence += 0.4; // 40% se encontrou padrões
+    }
+
+    if (similarCases.length > 0) {
+      confidence += 0.3; // 30% se encontrou casos similares
+      if (similarCases[0]?.similarity > 0.5) {
+        confidence += 0.2; // +20% se muito similar
+      }
+    }
+
+    confidence += Math.min(patterns.length * 0.1, 0.3); // +10% por padrão adicional (máx 30%)
+
+    return Math.min(confidence * 100, 95); // Máximo 95% de confiança
+  }
+
+  // Sugere prioridade baseada na análise
+  suggestPriority(patterns, currentPriority) {
+    if (patterns.length === 0) return currentPriority;
+
+    const suggestedPriorities = patterns.map(p => p.priority);
+    const priorityMap = { 'Baixa': 1, 'Média': 2, 'Alta': 3, 'Urgente': 4 };
+
+    const avgPriority = suggestedPriorities.reduce((sum, p) => sum + priorityMap[p], 0) / suggestedPriorities.length;
+
+    if (avgPriority >= 3.5) return 'Urgente';
+    if (avgPriority >= 2.5) return 'Alta';
+    if (avgPriority >= 1.5) return 'Média';
+    return 'Baixa';
+  }
+
+  // Estima tempo de resolução
+  estimateResolutionTime(patterns) {
+    if (patterns.length === 0) return 'Não estimado';
+    return patterns[0].estimatedTime;
+  }
+
+  // Calcula similaridade entre textos (algoritmo simples)
+  calculateTextSimilarity(text1, text2) {
+    const words1 = new Set(text1.split(' ').filter(w => w.length > 3));
+    const words2 = new Set(text2.split(' ').filter(w => w.length > 3));
+    
+    const intersection = new Set([...words1].filter(x => words2.has(x)));
+    const union = new Set([...words1, ...words2]);
+    
+    return union.size > 0 ? intersection.size / union.size : 0;
+  }
+
+  // Calcula tempo de resolução de um chamado
+  calculateResolutionTime(chamado) {
+    if (!chamado.criadoEm || !chamado.updatedAt) return null;
+    
+    const created = new Date(chamado.criadoEm);
+    const resolved = new Date(chamado.updatedAt);
+    const diffHours = Math.abs(resolved - created) / 36e5;
+    
+    return diffHours.toFixed(1) + ' horas';
+  }
+
+  // Calcula tempo médio de resolução
+  calculateAverageResolutionTime(chamados) {
+    const resolvedChamados = chamados.filter(c => c.status === 'Resolvido' && c.criadoEm && c.updatedAt);
+    
+    if (resolvedChamados.length === 0) return 'N/A';
+    
+    const totalHours = resolvedChamados.reduce((sum, chamado) => {
+      const diffHours = Math.abs(new Date(chamado.updatedAt) - new Date(chamado.criadoEm)) / 36e5;
+      return sum + diffHours;
+    }, 0);
+    
+    return (totalHours / resolvedChamados.length).toFixed(1) + ' horas';
+  }
+
+  // Atualiza base de conhecimento com nova resolução
+  async learnFromResolution(chamadoId, resolucao) {
+    try {
+      const chamado = await Chamado.findById(chamadoId);
+      if (!chamado) return;
+
+      // Aqui poderia implementar machine learning para melhorar as sugestões
+      // Por enquanto, apenas log para futuras implementações
+      console.log('🧠 AI Learning: Nova resolução registrada para categoria:', chamado.categoria);
+      
+    } catch (error) {
+      console.error('Erro ao aprender com resolução:', error);
+    }
+  }
+
+  // Sugestão de template de e-mail com IA simples (pode ser expandido para LLM externo)
+  async suggestEmailTemplate(prompt, tipo) {
+    // Se houver chave OpenAI, usa LLM externo
+    if (process.env.OPENAI_API_KEY) {
+      try {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: 'gpt-3.5-turbo',
+            messages: [
+              { role: 'system', content: 'Você é um assistente que gera templates de e-mail para notificações de chamados de helpdesk. Sempre retorne um JSON com os campos: assunto, html, texto.' },
+              { role: 'user', content: prompt }
+            ],
+            max_tokens: 600,
+            temperature: 0.7
+          })
+        });
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content;
+        // Tenta fazer parse do JSON retornado pelo modelo
+        if (content) {
+          try {
+            return JSON.parse(content);
+          } catch {
+            // Se não for JSON, retorna como texto simples
+            return { assunto: 'Notificação DeskHelp', html: `<p>${content}</p>`, texto: content };
+          }
+        }
+      } catch (e) {
+        console.error('Erro ao usar OpenAI para sugestão de template:', e.message);
+      }
+    }
+    // IA local: retorna sugestões básicas, pode ser integrado com LLM externo futuramente
+    if (tipo === 'novoChamado') {
+      return {
+        assunto: 'Novo chamado aberto no DeskHelp',
+        html: `<p>Um novo chamado foi aberto no DeskHelp.<br><b>Número:</b> {{numeroChamado}}<br><b>Título:</b> {{titulo}}<br><b>Descrição:</b> {{descricao}}<br><b>Prioridade:</b> {{prioridade}}<br><b>Departamento:</b> {{departamento}}<br><b>Solicitante:</b> {{nome}} ({{email}})</p>`,
+        texto: 'Um novo chamado foi aberto no DeskHelp. Número: {{numeroChamado}}. Título: {{titulo}}. Descrição: {{descricao}}. Prioridade: {{prioridade}}. Departamento: {{departamento}}. Solicitante: {{nome}} ({{email}}).'
+      };
+    }
+    if (tipo === 'comentarioChamado') {
+      return {
+        assunto: 'Novo comentário em seu chamado',
+        html: `<p>Seu chamado DeskHelp recebeu um novo comentário.<br><b>Número:</b> {{numeroChamado}}<br><b>Título:</b> {{titulo}}<br><b>Comentário de:</b> {{autorComentario}}<br><b>Comentário:</b> {{comentario}}</p>`,
+        texto: 'Seu chamado DeskHelp recebeu um novo comentário. Número: {{numeroChamado}}. Título: {{titulo}}. Comentário de: {{autorComentario}}. Comentário: {{comentario}}.'
+      };
+    }
+    if (tipo === 'chamadoAtribuido') {
+      return {
+        assunto: 'Seu chamado foi atribuído/reivindicado',
+        html: `<p>Seu chamado DeskHelp foi atribuído a um responsável.<br><b>Número:</b> {{numeroChamado}}<br><b>Título:</b> {{titulo}}<br><b>Responsável:</b> {{nomeAtribuido}}</p>`,
+        texto: 'Seu chamado DeskHelp foi atribuído a um responsável. Número: {{numeroChamado}}. Título: {{titulo}}. Responsável: {{nomeAtribuido}}.'
+      };
+    }
+    if (tipo === 'chamadoFinalizado') {
+      return {
+        assunto: 'Seu chamado foi finalizado',
+        html: `<p>Seu chamado DeskHelp foi finalizado.<br><b>Número:</b> {{numeroChamado}}<br><b>Título:</b> {{titulo}}<br><b>Solução:</b> {{solucao}}</p>`,
+        texto: 'Seu chamado DeskHelp foi finalizado. Número: {{numeroChamado}}. Título: {{titulo}}. Solução: {{solucao}}.'
+      };
+    }
+    // Default
+    return {
+      assunto: 'Notificação DeskHelp',
+      html: `<p>Nova notificação do DeskHelp.</p>`,
+      texto: 'Nova notificação do DeskHelp.'
+    };
+  }
+}
+
+module.exports = new AIService();

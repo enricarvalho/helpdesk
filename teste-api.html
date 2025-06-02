@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Teste API Email Config</title>
+</head>
+<body>
+    <h1>Teste da API de Configuração de Email</h1>
+    <button onclick="testarAPI()">Testar API</button>
+    <div id="resultado"></div>
+    
+    <script>
+        async function testarAPI() {
+            try {
+                // Simular um token de teste
+                const response = await fetch('http://localhost:5000/api/email-config/test', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer fake-token'
+                    },
+                    body: JSON.stringify({ emailTeste: 'teste@teste.com' })
+                });
+                
+                const data = await response.text();
+                document.getElementById('resultado').innerHTML = `
+                    <h3>Resposta:</h3>
+                    <pre>${data}</pre>
+                    <p>Status: ${response.status}</p>
+                `;
+            } catch (error) {
+                document.getElementById('resultado').innerHTML = `
+                    <h3>Erro:</h3>
+                    <pre>${error.message}</pre>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
